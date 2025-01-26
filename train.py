@@ -109,3 +109,4 @@ def main(pair):
 
 if __name__ == "__main__":
     main('EURUSD')
+    main('USDJPY')
