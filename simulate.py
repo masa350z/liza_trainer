@@ -5,13 +5,8 @@
 ・並列処理でランダムエントリーのシミュレーションを実行
 ・最終資産をヒートマップとして可視化
 ・ログやヒートマップを保存
-
-使い方:
-  python simulate.py --pair EURUSD
-  python simulate.py --pair USDJPY
 """
 
-import argparse
 import os
 import numpy as np
 import matplotlib.pyplot as plt
@@ -20,19 +15,12 @@ import seaborn as sns
 from modules.simulator_core import run_simulations_with_paramgrid
 
 
-def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--pair", type=str, default="EURUSD",
-                        choices=["USDJPY", "EURUSD"],
-                        help="Which currency pair to simulate (USDJPY or EURUSD).")
-    args = parser.parse_args()
-
-    pair = args.pair
+def main(pair):
     print(f"[INFO] Start simulation for {pair} with random entry...")
 
     # === 1. 利確/損切りの候補を設定 ===
-    rik_values = np.linspace(0.001, 0.01, 10)
-    son_values = np.linspace(0.010, 0.100, 10)
+    rik_values = np.linspace(0.001, 0.03, 30)
+    son_values = np.linspace(0.010, 0.300, 30)
 
     # === 2. シミュレーション実行 ===
     # run_simulations_with_paramgridが
@@ -47,19 +35,20 @@ def main():
 
     # === 3. ヒートマップとして可視化 ===
     os.makedirs(f"simulator_results/{pair}", exist_ok=True)
-    fig, ax = plt.subplots(figsize=(6, 5))
-    sns.heatmap(final_asset_matrix, annot=True, fmt=".2f",
-                cmap="YlGnBu", cbar=True, ax=ax, square=True)
+    fig, ax = plt.subplots(figsize=(12, 10))
+    sns.heatmap(final_asset_matrix, annot=False, fmt=".2f",
+                cmap="RdYlGn", cbar=True, ax=ax, square=True)
 
     ax.set_title(f"Final Asset Heatmap ({pair}, Random Entry)")
-    ax.set_xlabel("SON param index")
-    ax.set_ylabel("RIK param index")
+    ax.set_xlabel("SON parameter")
+    ax.set_ylabel("RIK parameter")
 
     # 軸ラベルをパラメータ値に
     ax.set_xticks(np.arange(len(son_values)) + 0.5)
     ax.set_yticks(np.arange(len(rik_values)) + 0.5)
-    ax.set_xticklabels([f"{v:.3f}" for v in son_values])
-    ax.set_yticklabels([f"{v:.3f}" for v in rik_values])
+    ax.set_xticklabels([f"{v:.3f}" for v in son_values],
+                       rotation=45, ha="right")
+    ax.set_yticklabels([f"{v:.3f}" for v in rik_values], rotation=0)
 
     heatmap_path = f"simulator_results/{pair}/heatmap_{pair}.png"
     plt.tight_layout()
@@ -71,4 +60,5 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    main(pair='EURUSD')
+    main(pair='USDJPY')

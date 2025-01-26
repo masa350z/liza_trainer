@@ -19,7 +19,7 @@ if gpus:
         tf.config.experimental.set_memory_growth(gpu, True)
 
 
-def main(pair):
+def main(pair, k, future_k):
     """学習のメインフローを実行する関数。
 
     1. CSV読み込み (USDJPY or EURUSD)
@@ -38,8 +38,6 @@ def main(pair):
 
     # === 2. 特徴量/ラベル作成 ===
     #   例: 直近k個の価格から future_k後の価格が上がるか(分類)
-    k = 30
-    future_k = 5
     print(f"[INFO] Creating dataset with k={k}, future_k={future_k}")
     (train_x, train_y), (valid_x, valid_y), (test_x, test_y) = create_dataset(
         prices, k, future_k,
@@ -78,7 +76,12 @@ def main(pair):
     # サブディレクトリ: "results/{pair}/{ModelClass}_{YYYYMMDD-HHMMSS}/"
     model_class_name = "Affine"
     now_str = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-    output_dir = os.path.join("results", pair, f"{model_class_name}_{now_str}")
+    # ディレクトリ名に k, future_k の値を埋め込む
+    output_dir = os.path.join(
+        "results",
+        pair,
+        f"{model_class_name}_k{k}_f{future_k}_{now_str}"
+    )
     os.makedirs(output_dir, exist_ok=True)
 
     # bestモデルの重み保存
@@ -108,5 +111,9 @@ def main(pair):
 
 
 if __name__ == "__main__":
-    main('EURUSD')
-    main('USDJPY')
+    for pair in ['EURUSD', 'USDJPY']:
+        for k in [30, 60, 90, 120, 150, 180]:
+            for i in [1, 2, 3, 6]:
+                future_k = int(k/i)
+
+                main(pair, k, future_k)

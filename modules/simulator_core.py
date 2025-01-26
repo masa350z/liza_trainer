@@ -56,6 +56,23 @@ def run_simulations_with_paramgrid(pair, rik_values, son_values, num_chunks=4,
 
     for i, rik in enumerate(rik_values):
         for j, son in enumerate(son_values):
+            # 事前にログファイルが存在するかチェック
+            param_str = f"rik{rik:.4f}_son{son:.4f}"
+            log_path = os.path.join(out_dir, f"log_{param_str}.csv")
+
+            if os.path.exists(log_path):
+                # 既存ログから最終資産を読み込み、シミュレーションをスキップ
+                with open(log_path, "r", encoding="utf-8") as f:
+                    lines = f.read().strip().split("\n")
+                    # 最終行が "step, asset" として並んでいるはず
+                    # 例: lines[-1] == "1234, 56.78"
+                    last_line = lines[-1].split(",")
+                    final_asset = float(last_line[1])
+                final_asset_matrix[i, j] = final_asset
+                print(
+                    f"[SKIP] param {param_str} found in logs. final_asset={final_asset:.4f}")
+                continue
+
             final_asset = simulate_param_with_chunks(
                 chunks, rik, son, out_dir, output_logs=output_logs)
             final_asset_matrix[i, j] = final_asset

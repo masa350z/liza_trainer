@@ -1,15 +1,24 @@
 # liza_trainer
 
-為替の1分足CSVデータを読み込み、単純なニューラルネットワーク(またはTransformerなど)を用いて
-「過去の価格から、指定した先の価格が上昇か下降かを2値分類する」学習を行うプロジェクトです。
+為替の1分足CSVデータを用いて、以下の2つを行うプロジェクトです:
 
-さらに、学習ロジックとして以下を備えています:
-- バリデーションロスが改善しなくなったら重みを一部ランダム再初期化して局所解回避
-- 一定エポック改善がなければ早期終了
-- 複数回のリピート(試行)を行い、テストセットで最良だったモデルの重みを保存
+1. **学習 (train.py)**  
+   過去の価格から、指定した先の価格が上昇か下降かを推定する2値分類モデルを学習する。  
+   バリデーションロスが改善しなければ一部重みをランダム初期化して局所解を回避し、一定エポック改善しなければ早期終了する仕組みを備えている。  
+   学習完了後は `results/<通貨ペア>/<モデル名>_<日時>/best_model_weights.h5` に最良モデルが保存される。
 
-実行のたびに「日時 + 使用したモデル種別」を組み合わせたディレクトリに結果が出力されるため、
-通貨ペア（USDJPY / EURUSD）とモデルを変えて複数実行した場合でもログが混ざりません。
+2. **シミュレーション (simulate.py)**  
+   ランダムエントリーと利確・損切り(複数パラメータ)のバックテストシミュレーションを並列で行う。  
+   最終資産をヒートマップにまとめ、 `simulator_results/<通貨ペア>/heatmap_<通貨ペア>.png` として出力する。  
+
+### コンセプト
+
+このプロジェクトのアルゴリズム設計は、以下のコンセプトに基づいています:
+
+- **「最悪AIがポンコツでも勝てる」**: ランダムエントリーでも勝てるアルゴリズムを構築することを第一目標とし、
+  利確・損切りのロジックによって安定した利益を追求します。
+- その上で、ニューラルネットワーク(NNモデル)を用いてさらに精度を高めることを目指します。
+- このアプローチにより、AIモデルの予測精度に完全に依存しない堅牢なシステムを実現します。
 
 ---
 
@@ -17,133 +26,119 @@
 
 ```
 liza_trainer
-├── main.py
+├── train.py          // 学習用のメインスクリプト
+├── simulate.py       // シミュレーション用のメインスクリプト
+├── data
+│   ├── sample_EURUSD_1m.csv
+│   └── sample_USDJPY_1m.csv
 ├── modules
 │   ├── data_loader.py
 │   ├── dataset.py
 │   ├── models.py
-│   └── trainer.py
-├── data
-│   ├── sample_EURUSD_1m.csv
-│   └── sample_USDJPY_1m.csv
-└── results
+│   ├── trainer.py
+│   └── simulate_core.py
+├── results
+│   ├── EURUSD
+│   └── USDJPY
+└── simulator_results
     ├── EURUSD
-    │   └── Affine_20250126-153045
-    │       ├── best_model_weights.h5
-    │       └── training_info.txt
     └── USDJPY
-        └── ...
 ```
 
-### ファイル概要
+---
 
-- **`main.py`**
-  - エントリーポイント。学習を実行する。
-  - 通貨ペアや、学習に使うモデルを指定する。
-  - 結果を `results/<通貨ペア>/<モデル名_日時>/` に出力。
+## 学習 (train.py)
 
-- **`modules/data_loader.py`**
-  - CSVファイル(`timestamp,price`構成)を読み込む関数。
+- `train.py` では、以下の処理を行う:
+  1. 指定した通貨ペア（`EURUSD`または`USDJPY`）のCSV (`data/sample_<pair>_1m.csv`) を読み込み。
+  2. `modules/dataset.py` の `create_dataset()` で `(train_x, train_y), (valid_x, valid_y), (test_x, test_y)` を作成。
+  3. 全結合モデル (`build_simple_affine_model`) などを構築。
+  4. `trainer.py` の `Trainer` クラスを使い、エポックごとにバリデーションを確認。  
+     - 改善しなければ一部重みをランダムに初期化し、局所解を回避。  
+     - 一定エポック改善が無ければ早期終了。  
+  5. テストセット評価が最良のモデルを `results/<pair>/<モデル>_<日時>/best_model_weights.h5` に保存。
 
-- **`modules/dataset.py`**
-  - データを `(train_x, train_y), (valid_x, valid_y), (test_x, test_y)` に分割し、2値分類ラベルの作成やクラスバランス調整を行う関数。
+### 実行手順
 
-- **`modules/models.py`**
-  - ニューラルネットワーク（Affine / Transformer）の定義を行うモジュール。
+1. CSVファイルを `data/sample_USDJPY_1m.csv` や `data/sample_EURUSD_1m.csv` として配置。  
+2. `train.py` の `main()` 内で `pair` を指定。  
+3. 下記のように実行すると学習が走り、最終的なモデル重みとパラメータログが保存される。  
 
-- **`modules/trainer.py`**
-  - 学習ロジック全般を管理するクラス。
-    - バリデーションロスが改善しなくなったら重みを部分的にランダム初期化する
-    - 一定エポック最良スコアが更新されなければ早期終了
-    - 複数回リピートし、テストデータ評価が最良のモデルを保管
+```bash
+python train.py
+```
+
+- 出力結果:
+  - `results/<pair>/<モデル>_<日時>/best_model_weights.h5`
+  - `training_info.txt` (学習結果やパラメータ)
+
+---
+
+## シミュレーション (simulate.py)
+
+`simulate.py` は、ランダムエントリー + 利確(rik)・損切り(son)の複数パラメータに対するバックテストを行う。
+
+- データを複数チャンクに分割し、`multiprocessing.Pool` を用いて並列にシミュレート。
+- チャンクを連結し、最終的な資産を集計。
+- 組み合わせごとの最終資産を 2次元配列に格納し、ヒートマップで可視化。
+
+### 実行手順
+
+1. 同様に `data/sample_<pair>_1m.csv` を配置 (EURUSD または USDJPY)。
+2. `simulate.py` を実行時に `--pair` オプションで通貨ペアを指定:
+
+```bash
+python simulate.py --pair EURUSD
+```
+
+- 出力結果:
+  - `simulator_results/<pair>/logs/` (パラメータ別のCSVログ)
+  - `simulator_results/<pair>/heatmap_<pair>.png` (最終資産のヒートマップ)
 
 ---
 
 ## 必要環境
 
 - Python 3系
-- TensorFlow 2系
+- TensorFlow 2系 (GPU利用可)
 - NumPy
 - pandas
+- matplotlib
+- seaborn
 
 ---
 
-## 使い方
+## 各ファイルの役割
 
-1. **リポジトリをクローンまたはダウンロード**
-   ディレクトリ構成は上記の通りに置いてください。
+- **train.py**  
+  学習のメインスクリプト。適宜 `pair` (`EURUSD` / `USDJPY`) を選択し、学習を実行。
 
-2. **CSVデータを用意**
-   `data` フォルダ内に `sample_USDJPY_1m.csv` および `sample_EURUSD_1m.csv` を配置してください。
-   形式は以下の2列のみです。行数は何行あっても構いません。
+- **simulate.py**  
+  シミュレーションのメインスクリプト。`--pair` オプションで通貨ペアを選択し、ヒートマップを出力。
 
-```
-timestamp,price
-1579068180,1.11508
-1579068240,1.11509
-...  
-```
-- `timestamp` は秒単位などのタイムスタンプ(整数)
-- `price` は浮動小数点数  
+- **data_loader.py**  
+  CSVを読み込み、`timestamp` と `price` のリストを返す。
 
-3. **main.py を編集または実行**
-   `main.py` 冒頭の `pair = "EURUSD"` を `"USDJPY"` に切り替えれば通貨ペアが変わります。
+- **dataset.py**  
+  `(train_x, train_y, valid_x, valid_y, test_x, test_y)` を生成する。ラベルを2値分類形式で作成。
 
-```python
-pair = "EURUSD"  # => "USDJPY" にすればドル円データ
-```
+- **models.py**  
+  全結合ネットワーク (`build_simple_affine_model`) や Transformer (`build_transformer_model`) などのモデル定義。
 
-   他にも、モデル定義やハイパーパラメータを変えたい場合、`build_simple_affine_model` を別のモデルに変更できます。
+- **trainer.py**  
+  バリデーションロスが改善しなければ重みの一部を初期化して局所解回避、一定エポック改善無ければ早期終了し、
+  複数回試行 (`num_repeats`) して最良を保存する仕組み。
 
-4. **実行**
-
-```bash
-python main.py
-```
-
-   学習が始まり、ターミナルにエポックごとのロス・精度が表示されます。
-   エポックごとに同じ行を上書き表示するため、最新のエポック結果のみが確認できます。
-   完了後、`results/<pair>/<ModelClass>_<YYYYMMDD-HHMMSS>/` ディレクトリが作られ、
-   - `best_model_weights.h5` : テストセット評価が最良だったモデル重み
-   - `training_info.txt` : 各種パラメータと精度を記録したファイル
-
-   が保存されます。
+- **simulate_core.py**  
+  `multiprocessing.Pool` を使ってチャンクごとにランダムエントリーシミュレーションを並列実行し、資産を合算する。
+  `(rik, son)` のパラメータを網羅的に走査し、最終資産をヒートマップ行列にまとめる。
 
 ---
 
-## 出力確認
+## 注意点
 
-`training_info.txt` には、学習日時や使用モデル、ベストバリデーション損失・精度、テスト損失・精度などが書かれています。
-同じペア・同じモデルで再度 `main.py` を実行すると、再び日時を含む別ディレクトリが作成され、過去の結果と混ざらずに保存されます。
-
----
-
-## 学習ロジックの詳細
-
-### Train / Valid / Test に分割
-
-`dataset.py` の `create_dataset` にて `k` (入力区間長) と `future_k` (予測先) を指定し、
-`(train_x, train_y), (valid_x, valid_y), (test_x, test_y)` を作成。
-`train_ratio=0.6, valid_ratio=0.2` の場合、 6:2:2 に分割されます。
-
-### モデル構築
-
-例: `build_simple_affine_model()` は 全結合レイヤーを2段重ね + 2出力(softmax) という2値分類用の構造です。
-`models.py` 内に、`build_transformer_model()` の例もあります。
-
-### Trainer クラスによる学習管理
-
-- `_train_loop()` でエポックを回す。
-- エポックごとにバリデーション評価をし、改善しなければ `patience` の猶予後に一部重みをランダム初期化して局所解を回避。
-- さらに `early_stop_patience` の猶予を超えてバリデーションの最良記録が更新されなければエポックを打ち切り(早期終了)。
-- これを `num_repeats` 回試行し、その都度テストセットを評価して最良の損失を更新し続け、最後にベストを保存。
-
----
-
-## 備考
-
-- GPU利用時は `main.py` 内で `tf.config.experimental.set_memory_growth(gpu, True)` を行い、必要な分だけメモリを確保する形にしています。
-- 価格予測の精度を上げるには、特徴量の拡張やモデル構造の工夫などが必要です。
-- ロジックの分割売買や実稼働の自動化はこのプロジェクトには含まれていません。
-- ソースコードはすべて `modules/` ディレクトリ内にあるため、学習ロジックの詳細を参照したい場合はそちらを読んでください。
+- CSVのカラムは `timestamp, price` のみ。
+- GPUメモリを必要分だけ確保するため、`tf.config.experimental.set_memory_growth` を使用。
+- 価格データは1分足想定だが、行数の制約は特にない。
+- 同じペアで複数回の学習/シミュレーションを行うと、日時つきのフォルダが都度生成され、結果が混ざらない。
 
