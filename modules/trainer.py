@@ -14,7 +14,6 @@
 
 import numpy as np
 import tensorflow as tf
-from tqdm import trange
 
 
 class GradualDecaySchedule(tf.keras.optimizers.schedules.LearningRateSchedule):
@@ -57,7 +56,8 @@ class Trainer:
                  max_epochs=1000,
                  patience=10,
                  num_repeats=5,
-                 batch_size=1024):
+                 batch_size=1024,
+                 early_stop_patience=100):
         """
         Args:
             model (tf.keras.Model): 学習対象のモデル
@@ -67,12 +67,15 @@ class Trainer:
             learning_rate_initial (float): 最初の学習率
             learning_rate_final (float): 最終的な学習率
             switch_epoch (int): 学習率の減衰をかけるステップ数
-            random_init_ratio (float): 
+            random_init_ratio (float):
                 バリデーションが改善しなくなった時に、一部重みをランダム化する際の割合
             max_epochs (int): エポック数の上限
             patience (int): validationロスが改善しないまま何エポック進んだら再初期化を行うか
-            num_repeats (int): 
+            num_repeats (int):
                 「(学習→再初期化)を繰り返してテスト評価し、最良を保存」する繰り返し回数
+            batch_size (int): ミニバッチサイズ
+            early_stop_patience (int):
+                最良のバリデーション損失から指定エポック以上経過すると学習打ち切り
         """
         self.model = model
 
@@ -102,6 +105,7 @@ class Trainer:
         self.best_test_acc = 0.0
 
         self.batch_size = batch_size
+        self.early_stop_patience = early_stop_patience
 
     def run(self):
         """メインの学習ループを実行し、ベストモデルを確定させる"""
@@ -151,12 +155,15 @@ class Trainer:
         self.temp_val_acc = 0.0
         patience_counter = 0
 
+        # 最良val_lossを出したエポック（early_stop_patience用）
+        best_val_epoch = -1
+
         num_samples = len(self.train_x)
         steps_per_epoch = max(1, num_samples // self.batch_size)
 
         # epochループ
         for epoch_i in range(self.max_epochs):
-            print(f"[INFO] Epoch {epoch_i+1}/{self.max_epochs}")
+            # print(f"[INFO] Epoch {epoch_i+1}/{self.max_epochs}")
 
             # ミニバッチ学習
             rand_idx = np.random.permutation(num_samples)
@@ -170,23 +177,37 @@ class Trainer:
 
             # 1epoch終了 -> バリデーションチェック
             val_loss, val_acc = self._evaluate(self.valid_x, self.valid_y)
-            print(f"   [VALID] loss={val_loss:.6f}, acc={val_acc:.6f}")
+            # print(f"   [VALID] loss={val_loss:.6f}, acc={val_acc:.6f}")
+
+            # 行を上書きするために "\r" や "flush=True" を使う
+            # # また、前の行が長かった場合に文字列が残ることを防ぐため、スペースで塗りつぶす
+            print(" "*120, end="\r")
+            print(f"[INFO] Epoch {epoch_i+1}/{self.max_epochs} | [VALID] loss={val_loss:.6f}, acc={val_acc:.6f}",
+                  end="\r", flush=True)
 
             if val_loss < self.temp_val_loss:
                 # 改善した
                 self.temp_val_loss = val_loss
                 self.temp_val_acc = val_acc
+                best_val_epoch = epoch_i
                 patience_counter = 0
             else:
                 # 改善しない
                 patience_counter += 1
                 if patience_counter >= self.patience:
                     # 部分的に重みをランダム初期化し、局所解からの脱出を図る
-                    print(
-                        "[INFO] Validation not improving. Re-initializing partial weights.")
+                    # print("[INFO] Validation not improving. Re-initializing partial weights.")
                     self._partial_random_init()
                     # カウンターリセット
                     patience_counter = 0
+
+            # 一定エポック以上、最良記録が更新されなければ終了
+            if epoch_i - best_val_epoch >= self.early_stop_patience:
+                print(
+                    f"[INFO] No improvement since epoch {best_val_epoch+1}. Early stopping.")
+                break
+
+        print()  # ループ終了後に改行しておかないとプロンプトが同じ行に出てしまう
 
     def _train_step(self, bx, by):
         with tf.GradientTape() as tape:

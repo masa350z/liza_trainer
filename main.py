@@ -2,38 +2,42 @@
 """liza_trainer のエントリーポイント
 学習ロジックを実行し、最終的にベストモデルを保存する。
 """
+import os
+import datetime
+import tensorflow as tf
+
 from modules.trainer import Trainer
 from modules.models import build_simple_affine_model
 from modules.dataset import create_dataset
 from modules.data_loader import load_csv_data
-import os
-import tensorflow as tf
 
+
+# 必要な分だけGPUメモリを確保する
 gpus = tf.config.list_physical_devices('GPU')
 if gpus:
     for gpu in gpus:
         tf.config.experimental.set_memory_growth(gpu, True)
 
 
-def main():
+def main(pair):
     """学習のメインフローを実行する関数。
 
-    1. CSV読み込み
+    1. CSV読み込み (USDJPY or EURUSD)
     2. 特徴量/ラベル作成
     3. モデル定義
     4. 学習・評価のループ
-
+    5. 保存用フォルダ作成 -> 最良モデル重み & infoを出力
     """
 
-    # === 1. CSV読み込み ===
-    csv_file = os.path.join("data", "sample_EURUSD_1m.csv")
-    # CSVファイルには "timestamp, price" カラムがある前提
-    print(f"[INFO] Loading CSV data from: {csv_file}")
+    # === 1. 通貨ペアの指定 (USDJPY or EURUSD) ===
+    csv_file_name = f"sample_{pair}_1m.csv"
+    csv_file = os.path.join("data", csv_file_name)
+    print(f"[INFO] Loading CSV data for {pair} from: {csv_file}")
+
     timestamps, prices = load_csv_data(csv_file)
 
     # === 2. 特徴量/ラベル作成 ===
-    #   - k=90, pr_k=15 のように、直近k個の価格から「pr_k後の価格が上がるかどうか」を予測
-    #   - ここでは例として k=30, pr_k=5
+    #   例: 直近k個の価格から future_k後の価格が上がるか(分類)
     k = 30
     future_k = 5
     print(f"[INFO] Creating dataset with k={k}, future_k={future_k}")
@@ -43,15 +47,12 @@ def main():
     )
 
     # === 3. モデル定義 ===
-    #   - モデルの構成は modules/models.py に定義
-    #   - 今回は単純な全結合モデル build_simple_affine_model() を用いる
+    #   - 例: 全結合モデル (Affine)
+    print("[INFO] Building model (Affine)")
     input_dim = train_x.shape[1]
-    print(f"[INFO] Building model with input_dim={input_dim}")
     model = build_simple_affine_model(input_dim)
 
     # === 4. 学習・評価のループ ===
-    #   - Trainerクラスを用いて、バリデーションロスが改善しなくなったら
-    #     重みランダム初期化などのロジックを入れる
     print("[INFO] Starting training process...")
 
     trainer = Trainer(
@@ -61,24 +62,50 @@ def main():
         test_data=(test_x, test_y),
         learning_rate_initial=1e-4,
         learning_rate_final=1e-5,
-        switch_epoch=250,         # 学習率を切り替えるステップ数
-        random_init_ratio=1e-4,  # バリデーション損失が改善しなくなった場合の部分的ランダム初期化率
-        max_epochs=1000,
-        patience=10,             # validationが改善しなくなってから再初期化までの猶予回数
+        switch_epoch=1000,         # 学習率を切り替えるステップ数
+        random_init_ratio=1e-4,   # バリデーション損失が改善しなくなった場合の部分的ランダム初期化率
+        max_epochs=10000,
+        patience=10,              # validationが改善しなくなってから再初期化までの猶予回数
         num_repeats=5,            # 学習→バリデーション→（初期化）を繰り返す試行回数
-        batch_size=40000
+        batch_size=40000,
+        early_stop_patience=100
     )
 
     trainer.run()
     print("[INFO] Training finished.")
 
-    # 結果としてモデルの重みは trainer.best_weights に記録されているので、
-    # 任意のファイルに保存しておく
-    best_model_path = "best_model_weights.h5"
-    trainer.save_best_weights(best_model_path)
+    # === 5. 保存用フォルダ作成 & 結果出力 ===
+    # サブディレクトリ: "results/{pair}/{ModelClass}_{YYYYMMDD-HHMMSS}/"
+    model_class_name = "Affine"
+    now_str = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+    output_dir = os.path.join("results", pair, f"{model_class_name}_{now_str}")
+    os.makedirs(output_dir, exist_ok=True)
 
-    print(f"[INFO] Best model weights saved to {best_model_path}")
+    # bestモデルの重み保存
+    best_weights_path = os.path.join(output_dir, "best_model_weights.h5")
+    trainer.save_best_weights(best_weights_path)
+
+    # トレーニング情報をテキスト出力
+    info_txt_path = os.path.join(output_dir, "training_info.txt")
+    with open(info_txt_path, "w", encoding="utf-8") as f:
+        f.write(f"Pair: {pair}\n")
+        f.write(f"Model Class: {model_class_name}\n")
+        f.write(f"DateTime: {now_str}\n\n")
+
+        f.write(f"Best Validation Loss : {trainer.best_val_loss:.6f}\n")
+        f.write(f"Best Validation Acc  : {trainer.best_val_acc:.6f}\n")
+        f.write(f"Best Test Loss       : {trainer.best_test_loss:.6f}\n")
+        f.write(f"Best Test Acc        : {trainer.best_test_acc:.6f}\n\n")
+
+        f.write("Trainer parameters:\n")
+        f.write(f"  max_epochs={trainer.max_epochs}\n")
+        f.write(f"  patience={trainer.patience}\n")
+        f.write(f"  early_stop_patience={trainer.early_stop_patience}\n")
+        f.write(f"  num_repeats={trainer.num_repeats}\n")
+        f.write(f"  random_init_ratio={trainer.random_init_ratio}\n")
+
+    print(f"[INFO] Results saved in: {output_dir}")
 
 
 if __name__ == "__main__":
-    main()
+    main('EURUSD')
