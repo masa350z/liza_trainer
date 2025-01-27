@@ -1,0 +1,15 @@
+Pair: USDJPY
+Model Class: Affine
+DateTime: 20250127-155416
+
+Best Validation Loss : 0.691614
+Best Validation Acc  : 0.522319
+Best Test Loss       : 0.691561
+Best Test Acc        : 0.522697
+
+Trainer parameters:
+  max_epochs=10000
+  patience=10
+  early_stop_patience=100
+  num_repeats=5
+  random_init_ratio=0.0001

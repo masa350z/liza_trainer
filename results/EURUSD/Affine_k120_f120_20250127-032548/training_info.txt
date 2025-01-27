@@ -1,0 +1,15 @@
+Pair: EURUSD
+Model Class: Affine
+DateTime: 20250127-032548
+
+Best Validation Loss : 0.692454
+Best Validation Acc  : 0.517169
+Best Test Loss       : 0.692176
+Best Test Acc        : 0.518944
+
+Trainer parameters:
+  max_epochs=10000
+  patience=10
+  early_stop_patience=100
+  num_repeats=5
+  random_init_ratio=0.0001
