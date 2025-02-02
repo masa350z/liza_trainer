@@ -46,9 +46,9 @@ def main(pair):
     # 軸ラベルをパラメータ値に
     ax.set_xticks(np.arange(len(son_values)) + 0.5)
     ax.set_yticks(np.arange(len(rik_values)) + 0.5)
-    ax.set_xticklabels([f"{v:.3f}" for v in son_values],
+    ax.set_xticklabels([f"{v*100:.3f}" for v in son_values],
                        rotation=45, ha="right")
-    ax.set_yticklabels([f"{v:.3f}" for v in rik_values], rotation=0)
+    ax.set_yticklabels([f"{v*100:.3f}" for v in rik_values], rotation=0)
 
     heatmap_path = f"simulator_results/{pair}/heatmap_{pair}.png"
     plt.tight_layout()

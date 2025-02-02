@@ -1,6 +1,6 @@
 # simulate_with_ai.py
 """
-AIモデル（weightsファイル）を用いてエントリー方向を決定し、
+AIモデル(weightsファイル)を用いてエントリー方向を決定し、
 利確/損切り (rik, son) を指定してシミュレーションを行うスクリプト。
 
 全ステップでポジションを判定し、資産を更新し、ステップごとにログを保存。
@@ -16,10 +16,15 @@ import argparse
 import os
 import csv
 import numpy as np
-import pandas as pd
 import tensorflow as tf
 from modules.data_loader import load_csv_data
 from modules.models import build_simple_affine_model  # 例としてAffineモデル構造を使用
+
+# 必要な分だけGPUメモリを確保する
+gpus = tf.config.list_physical_devices('GPU')
+if gpus:
+    for gpu in gpus:
+        tf.config.experimental.set_memory_growth(gpu, True)
 
 
 def main():
@@ -76,7 +81,7 @@ def main():
 
     for step_i, price in enumerate(prices_arr):
         # 進捗をprint (例: 10000ステップあるうち毎1000ステップで状況を表示)
-        if step_i % 100000 == 0:
+        if step_i % 10000 == 0:
             print(
                 f"  Step {step_i}/{len(prices_arr)} ... Current asset={asset:.4f}")
 
@@ -101,11 +106,20 @@ def main():
 
         # pos=0 かつ price_bufferが十分たまっていれば、AI判定でエントリー
         if pos == 0 and len(price_buffer) == k:
-            # モデルの入力は (1, k) 形状
-            data_in = np.array(price_buffer, dtype=np.float32).reshape(1, k)
+            # ---- ここでMin-Max正規化を行う ----
+            buffer_array = np.array(price_buffer, dtype=np.float32)
+            min_val = buffer_array.min()
+            max_val = buffer_array.max()
+
+            scaled_array = (buffer_array - min_val) / \
+                (max_val - min_val + 1e-8)
+
+            # モデルの入力は (1, k) 形
+            data_in = scaled_array.reshape(1, k)
             pred = model(data_in, training=False).numpy()  # shape=(1,2)
+
             # pred[0,0] => "上がる"の確率, pred[0,1] => "下がる"の確率
-            if pred[0, 0] > pred[0, 1]:
+            if pred[0][0] > 0.5:
                 pos = 1
             else:
                 pos = -1
@@ -121,7 +135,7 @@ def main():
     # 4) ログの書き込み
     out_dir = f"simulator_results/{pair}_AI_logs"
     os.makedirs(out_dir, exist_ok=True)
-    log_name = f"log_ai_k{k}_rik{rik:.4f}_son{son:.4f}.csv"
+    log_name = f"log_ai_k{k}_rik{rik:.6f}_son{son:.6f}.csv"
     log_path = os.path.join(out_dir, log_name)
     print(f"[INFO] Saving step-by-step asset log to {log_path}")
 
