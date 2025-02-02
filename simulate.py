@@ -19,8 +19,8 @@ def main(pair):
     print(f"[INFO] Start simulation for {pair} with random entry...")
 
     # === 1. 利確/損切りの候補を設定 ===
-    rik_values = np.linspace(0.001, 0.05, 50)
-    son_values = np.linspace(0.010, 0.500, 50)
+    rik_values = np.linspace(0.001/100, 0.05/100, 50)
+    son_values = np.linspace(0.010/100, 0.500/100, 50)
 
     # === 2. シミュレーション実行 ===
     # run_simulations_with_paramgridが
@@ -60,5 +60,5 @@ def main(pair):
 
 
 if __name__ == "__main__":
-    # main(pair='EURUSD')
+    main(pair='EURUSD')
     main(pair='USDJPY')
