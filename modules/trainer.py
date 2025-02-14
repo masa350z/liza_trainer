@@ -30,27 +30,40 @@ class RLTrainer:
 
         Returns:
             states (list): 各ステップの状態 (shape: (window_size, feature_dim))
-            actions (list): 各ステップで取った行動(整数)
-            rewards (list): 各ステップで得た報酬(float)
+            actions (list): 各ステップで取った行動（整数）
+            rewards (list): 各ステップで得た報酬（float）
         """
         states = []
         actions = []
         rewards = []
         state = self.env.reset()
         done = False
+        step_counter = 0
+
+        # ヒストリカルデータの長さとウィンドウサイズから最大ステップ数を算出
+        total_steps = len(self.env.prices) - self.env.window_size
+        from tqdm import tqdm
+        pbar = tqdm(total=total_steps, desc="Episode Steps", unit="step")
 
         while not done:
             # バッチ次元を追加してモデル推論
+            # shape: (1, window_size, feature_dim)
             state_input = state[None, ...]
-            policy, _ = self.model(state_input, training=False)
+            policy, value = self.model(state_input, training=False)
             policy = policy.numpy()[0]  # shape: (num_actions,)
             action = np.random.choice(self.num_actions, p=policy)
+
             next_state, reward, done = self.env.step(action)
             states.append(state)
             actions.append(action)
             rewards.append(reward)
+            step_counter += 1
+            pbar.update(1)  # 1ステップ進むたびに更新
             state = next_state if next_state is not None else state
 
+        pbar.close()
+        print(
+            f"[RL] Episode finished in {step_counter} steps. Total Reward: {np.sum(rewards):.6f}")
         return states, actions, rewards
 
     def compute_returns(self, rewards):

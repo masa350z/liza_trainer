@@ -5,7 +5,7 @@ simulate.py
 ステップごとの資産変動ログを出力します。
 
 Usage:
-    python simulate.py --pair EURUSD --weights results/models/EURUSD/ActorCritic_ws30_YYYYMMDD-HHMMSS/best_model_weights.h5 --window_size 30
+    python simulate.py --pair EURUSD --weights results/models/EURUSD/ActorCritic_ws30_YYYYMMDD-HHMMSS/best_model.weights.h5 --window_size 30
 """
 
 import os
@@ -39,7 +39,7 @@ def main():
     weights_path = args.weights
     window_size = args.window_size
 
-    csv_file = os.path.join("data", f"sample_{pair}_1m.csv")
+    csv_file = os.path.join("data", f"{pair}_1m.csv")
     print(f"[INFO] Loading CSV data from: {csv_file}")
     _, prices = load_csv_data(csv_file)
     if len(prices) < window_size + 1:

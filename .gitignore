@@ -2,3 +2,5 @@
 *__pycache__
 *temp.py
 *.h5
+venv
+*.Identifier

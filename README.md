@@ -34,8 +34,8 @@
 liza_trainer/
 ├── README.md
 ├── data/
-│   ├── sample_EURUSD_1m.csv
-│   └── sample_USDJPY_1m.csv
+│   ├── EURUSD_1m.csv
+│   └── USDJPY_1m.csv
 ├── modules/
 │   ├── data_loader.py
 │   ├── env.py
@@ -98,7 +98,7 @@ CSVファイルから `timestamp` と `price` のリストを抽出。
   学習済みモデルの重みを指定してシミュレーションを実施。
 - **実行:**
   ```bash
-  python simulate.py --pair EURUSD --weights results/models/EURUSD/ActorCritic_ws30_YYYYMMDD-HHMMSS/best_model_weights.h5 --window_size 30
+  python simulate.py --pair EURUSD --weights results/models/EURUSD/ActorCritic_ws30_YYYYMMDD-HHMMSS/best_model.weights.h5 --window_size 30
   ```
 
 ---
@@ -113,8 +113,8 @@ CSVファイルから `timestamp` と `price` のリストを抽出。
 
 1. **データ準備:**
    ```bash
-   cp sample_EURUSD_1m.csv data/
-   cp sample_USDJPY_1m.csv data/
+   cp EURUSD_1m.csv data/
+   cp USDJPY_1m.csv data/
    ```
 
 2. **学習の実行:**
@@ -124,7 +124,7 @@ CSVファイルから `timestamp` と `price` のリストを抽出。
 
 3. **シミュレーションの実行:**
    ```bash
-   python simulate.py --pair EURUSD --weights results/models/EURUSD/ActorCritic_ws30_YYYYMMDD-HHMMSS/best_model_weights.h5 --window_size 30
+   python simulate.py --pair EURUSD --weights results/models/EURUSD/ActorCritic_ws30_YYYYMMDD-HHMMSS/best_model.weights.h5 --window_size 30
    ```
 
 ---

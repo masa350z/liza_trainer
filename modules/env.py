@@ -82,20 +82,13 @@ class TradingEnv:
                 self.position = 0
                 self.entry_price = 0.0
 
-        # デバッグ用出力
-        print(f"[ENV] Index: {self.current_index}, Price: {price:.4f}, Action: {action}, "
-              f"Old Pos: {old_position}, New Pos: {self.position}, "
-              f"Old Entry: {old_entry_price:.4f}, New Entry: {self.entry_price:.4f}, Reward: {reward:.6f}")
-
         self.current_index += 1
         if self.current_index >= len(self.prices):
             # エピソード終了時、未決済のポジションがあれば強制クローズ
             if self.position != 0:
                 final_price = self.prices[-1]
                 reward += (final_price - self.entry_price) * self.position
-                print(f"[ENV] Force Exit at End: Final Price: {final_price:.4f}, "
-                      f"Entry Price: {self.entry_price:.4f}, "
-                      f"Additional Reward: {(final_price - self.entry_price) * self.position:.6f}")
+
                 self.position = 0
                 self.entry_price = 0.0
             self.done = True

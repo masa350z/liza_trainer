@@ -20,14 +20,14 @@ if gpus:
         tf.config.experimental.set_memory_growth(gpu, True)
 
 
-def main(pair, window_size, num_episodes):
+def main(pair, window_size, num_episodes, histrical_length=''):
     """
     Args:
         pair (str): "EURUSD" または "USDJPY"
         window_size (int): 状態として使用する過去の価格数
         num_episodes (int): 学習エピソード数
     """
-    csv_file = os.path.join("data", f"sample_{pair}_1m.csv")
+    csv_file = os.path.join("data", f"{pair}_1m{histrical_length}.csv")
     print(f"[INFO] Loading CSV data for {pair} from: {csv_file}")
     _, prices = load_csv_data(csv_file)
     if len(prices) < window_size + 1:
@@ -58,12 +58,14 @@ def main(pair, window_size, num_episodes):
     output_dir = os.path.join(
         "results/models", pair, f"ActorCritic_ws{window_size}_{now_str}")
     os.makedirs(output_dir, exist_ok=True)
-    weights_path = os.path.join(output_dir, "best_model_weights.h5")
+    weights_path = os.path.join(output_dir, "best_model.weights.h5")
     model.save_weights(weights_path)
     print(f"[INFO] Model weights saved to: {weights_path}")
 
 
 if __name__ == "__main__":
     # 例としてEURUSD、ウィンドウサイズ30、エピソード数1000で学習
-    for pair in ['EURUSD', 'USDJPY']:
-        main(pair=pair, window_size=30, num_episodes=1)
+    # for pair in ['EURUSD', 'USDJPY']:
+    for pair in ['USDJPY']:
+        main(pair=pair, window_size=30, num_episodes=10,
+             histrical_length='_len10000')
