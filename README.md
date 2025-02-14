@@ -1,131 +1,136 @@
 # Liza Trainer
 
-本プロジェクトは、為替の1分足データ（例：EURUSD、USDJPY）を用いて、エンドツーエンドで収益最大化を目指す深層強化学習トレーディングシステムを実現するものです。
+本プロジェクトは、強化学習を用いたFXトレーディングの学習・シミュレーションを行うためのサンプルプロジェクトです。
+各モジュールは以下の機能を担当しています:
 
-このシステムは、**Actor-Critic**アーキテクチャを採用しており、LSTM層による時系列特徴抽出と、ポリシーヘッド・バリューヘッドによる行動選択・状態価値評価を行います。
+## 各モジュールの概要
 
-また、環境側（TradingEnv）では、**現在のポジション**や**ポジション取得後の評価損益**を計算し、これを報酬としてエージェントにフィードバックします。結果として、モデルは単に「上がる／下がる」の分類ではなく、実際の取引結果に基づいた最適なエントリー、ホールド、決済のタイミングを学習し、リスク管理も内包した取引戦略を獲得します。
+- **modules/data_loader.py**  
+  CSVファイルから時系列の価格データ（タイムスタンプと価格）を読み込みます。
+
+- **modules/env.py**  
+  シンプルなトレーディング環境を定義。
+  - `TradingEnv`: 単一環境
+  - `VectorizedTradingEnv`: 複数のトレーディング環境を一括で管理するベクトル化環境
+
+- **modules/models.py**  
+  LSTMを用いたActor-Criticモデル（ポリシーヘッドとバリューヘッド）を定義します。
+
+- **modules/trainer.py**  
+  ベクトル化環境を使って効率的に経験を収集し、Actor-Criticモデルを学習するためのトレーナを定義します。
+
+- **train.py**  
+  上記モジュールを使って実際に学習を実行するスクリプト。
+
+- **simulate.py**  
+  学習済みのモデル（重みファイル）を用い、価格データをもとにシミュレーションを実行。
 
 ---
 
-## 特徴
+## セットアップ
 
-- **時系列入力:**  
-  各状態は直近の `window_size` 分の価格データを (window_size, 1) の形で与え、LSTM層により時間的依存性を学習します。
+### Python バージョン
+Python 3.7 以上を推奨します。
 
-- **Actor-Criticモデル:**  
-  モデルは2つの出力ヘッドを持ちます。
-  - **ポリシーヘッド:** 4種類の行動（0: Hold, 1: Enter Long, 2: Enter Short, 3: Exit）の選択確率を出力。
-  - **バリューヘッド:** 現在の状態における将来的な累積報酬（状態価値）をスカラーで出力。
+### 依存ライブラリのインストール
+プロジェクトのルートディレクトリに移動し、以下のコマンドで `requirements.txt` を使って依存関係をインストールしてください。
 
-- **トレーディング環境 (TradingEnv):**  
-  環境は、入力価格系列とは別に内部で「現在のポジション（0, 1, -1）」および「エントリー価格」を保持し、Exitアクション時に現在価格とエントリー価格の差から評価損益を計算し、報酬として返します。
+```bash
+pip install -r requirements.txt
+```
 
-- **強化学習トレーナー (RLTrainer):**  
-  エピソード単位で環境と対話し、各ステップの状態、行動、報酬を収集。
+また、GPUを利用する場合は `tensorflow-gpu` のインストールが必要な場合があります。
 
-- **シミュレーション:**  
-  学習済みモデルの重みを読み込み、過去データに対してシミュレーションを実行。
+### データの配置
+`data` ディレクトリに CSV ファイルを用意してください。
+本プロジェクトでは `timestamp, price` の形で保存されていることを前提としています。
+
+例: `EURUSD_1m.csv`, `USDJPY_1m.csv` など。
+
+---
+
+## トレーニングの実行
+
+トレーニングのエントリーポイントは `train.py` です。
+デフォルトでは、USDJPY の価格データを使い、ウィンドウサイズ 30、エピソード数 100、並列環境数 1000 などの設定例がハードコードされています。
+
+```bash
+python train.py
+```
+
+実行が完了すると、結果が `results/models/` 以下に日付つきフォルダで保存され、学習済みモデルの重み (`best_model.weights.h5`) が出力されます。
+
+### パラメータを変更したい場合
+`train.py` の `main()` 関数にある以下の引数を変更して、自分のデータに合った学習を行ってください。
+
+```python
+main(
+    pair='USDJPY',           # "EURUSD" 等、通貨ペアを指定
+    window_size=30,         # 過去価格何本分を状態として見るか
+    num_episodes=100,       # 学習エピソード数
+    num_envs=1000,          # 並列環境数 (データを分割して学習)
+    mini_batch_size=10000,  # ミニバッチサイズ
+    historical_length='_len1000000'  # CSVファイル名に付与するオプション文字列
+)
+```
+
+---
+
+## シミュレーションの実行
+
+学習済みモデルの重みを用いて、トレード結果をシミュレーションするには `simulate.py` を実行します。
+
+```bash
+python simulate.py \
+    --pair USDJPY \
+    --weights results/models/USDJPY/ActorCritic_ws30_YYYYMMDD-HHMMSS/best_model.weights.h5 \
+    --window_size 30
+```
+
+**コマンドライン引数:**
+
+- `--pair`: "EURUSD" や "USDJPY" を指定
+- `--weights`: 学習済みモデルの重みファイル (`.h5`) のパス
+- `--window_size`: 学習時と同じウィンドウサイズを指定
+
+シミュレーションのステップごとの行動ログと累積報酬（資産推移）が
+`results/simulations/<pair>_AI_logs/log_ai_ws<window_size>.csv` というファイル名で出力されます。
 
 ---
 
 ## ディレクトリ構成
+
 ```
-liza_trainer/
+liza_trainer
+├── .gitignore
 ├── README.md
-├── data/
+├── data
+│   ├── .gitkeep
 │   ├── EURUSD_1m.csv
-│   └── USDJPY_1m.csv
-├── modules/
+│   ├── ... (他の csv データ)
+├── modules
 │   ├── data_loader.py
 │   ├── env.py
 │   ├── models.py
-│   └── trainer.py
-├── results/
-│   ├── models/
-│   └── simulations/
-├── train.py
-└── simulate.py
+│   ├── trainer.py
+├── requirements.txt
+├── results
+│   ├── models
+│   │   └── USDJPY
+│   │       └── ActorCritic_ws30_YYYYMMDD-HHMMSS
+│   │           └── best_model.weights.h5
+│   └── simulations
+│       └── USDJPY_AI_logs
+│           └── log_ai_ws30.csv
+├── simulate.py
+└── train.py
 ```
 
 ---
 
-## 必要環境
+## 注意点
 
-- Python 3.x
-- TensorFlow 2.x
-- NumPy
-- pandas
-
----
-
-## 各モジュールの詳細
-
-### 1. `modules/data_loader.py`
-CSVファイルから `timestamp` と `price` のリストを抽出。
-
-### 2. `modules/env.py` (TradingEnv)
-- **内部状態:**  
-  - `current_index`: 次に参照する価格のインデックス
-  - `position`: 現在のポジション（0: ノーポジション、1: ロング、-1: ショート）
-  - `entry_price`: ポジションを開いたときの価格
-
-- **step() メソッド:**
-  - Enter Long / Short: ポジションを設定。
-  - Hold: 何もしない。
-  - Exit: 評価損益（報酬）を計算し、ポジションをクリア。
-
-### 3. `modules/models.py`
-- **build_actor_critic_model():**  
-  LSTM層で時系列特徴を抽出し、ポリシーヘッドとバリューヘッドを出力。
-
-### 4. `modules/trainer.py` (RLTrainer)
-- **run_episode():** 環境との対話を実施。
-- **compute_returns():** 割引累積報酬を計算。
-- **train_on_episode():** モデルの損失を更新。
-- **train():** 指定エピソード数だけ学習を繰り返す。
-
-### 5. `train.py`
-- **概要:**  
-  指定した通貨ペア（EURUSDまたはUSDJPY）のCSVデータを読み込み、Actor-Criticモデルで学習を実施。
-- **実行:**
-  ```bash
-  python train.py
-  ```
-
-### 6. `simulate.py`
-- **概要:**  
-  学習済みモデルの重みを指定してシミュレーションを実施。
-- **実行:**
-  ```bash
-  python simulate.py --pair EURUSD --weights results/models/EURUSD/ActorCritic_ws30_YYYYMMDD-HHMMSS/best_model.weights.h5 --window_size 30
-  ```
-
----
-
-## 注意事項
-- 価格データ（CSV）のフォーマットは `timestamp,price` であることを前提。
-- 学習はオフライン環境で実施し、学習済みモデルはシミュレーションで評価。
-
----
-
-## 実行手順
-
-1. **データ準備:**
-   ```bash
-   cp EURUSD_1m.csv data/
-   cp USDJPY_1m.csv data/
-   ```
-
-2. **学習の実行:**
-   ```bash
-   python train.py
-   ```
-
-3. **シミュレーションの実行:**
-   ```bash
-   python simulate.py --pair EURUSD --weights results/models/EURUSD/ActorCritic_ws30_YYYYMMDD-HHMMSS/best_model.weights.h5 --window_size 30
-   ```
-
----
+- 本実装はサンプルコードであり、スプレッドやスリッページ、リスク管理など実際のトレードに必要な要素は含まれていません。
+- 大量のヒストリカルデータ（数百万行）を使用する場合、ハードウェアの性能（メモリやGPU）に依存して学習時間が大きく変化します。
+- 本コードは強化学習のトレーディング応用例として提供しているものであり、実運用で使用する場合は十分な検証を行ってください。
 
