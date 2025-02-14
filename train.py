@@ -1,119 +1,69 @@
-# main.py
-"""liza_trainer のエントリーポイント
-学習ロジックを実行し、最終的にベストモデルを保存する。
 """
+liza_trainer の学習エントリーポイント
+
+データを読み込み、TradingEnv環境を構築し、Actor-Criticモデルを学習後、最良モデルの重みを保存します。
+"""
+
 import os
 import datetime
 import tensorflow as tf
 
-from modules.trainer import Trainer
-from modules.models import build_simple_affine_model
-from modules.dataset import create_dataset
 from modules.data_loader import load_csv_data
+from modules.env import TradingEnv
+from modules.models import build_actor_critic_model
+from modules.trainer import RLTrainer
 
-
-# 必要な分だけGPUメモリを確保する
+# GPUメモリの必要分だけ確保
 gpus = tf.config.list_physical_devices('GPU')
 if gpus:
     for gpu in gpus:
         tf.config.experimental.set_memory_growth(gpu, True)
 
 
-def main(pair, k, future_k):
-    """学習のメインフローを実行する関数。
-
-    1. CSV読み込み (USDJPY or EURUSD)
-    2. 特徴量/ラベル作成
-    3. モデル定義
-    4. 学習・評価のループ
-    5. 保存用フォルダ作成 -> 最良モデル重み & infoを出力
+def main(pair, window_size, num_episodes):
     """
-
-    # === 1. 通貨ペアの指定 (USDJPY or EURUSD) ===
-    csv_file_name = f"sample_{pair}_1m.csv"
-    csv_file = os.path.join("data", csv_file_name)
+    Args:
+        pair (str): "EURUSD" または "USDJPY"
+        window_size (int): 状態として使用する過去の価格数
+        num_episodes (int): 学習エピソード数
+    """
+    csv_file = os.path.join("data", f"sample_{pair}_1m.csv")
     print(f"[INFO] Loading CSV data for {pair} from: {csv_file}")
+    _, prices = load_csv_data(csv_file)
+    if len(prices) < window_size + 1:
+        raise ValueError("価格データがwindow_sizeよりも短いため、環境を構築できません。")
 
-    timestamps, prices = load_csv_data(csv_file)
+    # 環境の構築
+    env = TradingEnv(prices, window_size)
+    feature_dim = 1  # 価格のみの場合
 
-    # === 2. 特徴量/ラベル作成 ===
-    #   例: 直近k個の価格から future_k後の価格が上がるか(分類)
-    print(f"[INFO] Creating dataset with k={k}, future_k={future_k}")
-    (train_x, train_y), (valid_x, valid_y), (test_x, test_y) = create_dataset(
-        prices, k, future_k,
-        train_ratio=0.6, valid_ratio=0.2, down_sampling=10
-    )
+    # モデル構築
+    num_actions = 4  # 0: Hold, 1: Enter Long, 2: Enter Short, 3: Exit
+    model = build_actor_critic_model(
+        time_steps=window_size, feature_dim=feature_dim, num_actions=num_actions, lstm_units=64)
 
-    # === 3. モデル定義 ===
-    #   - 例: 全結合モデル (Affine)
-    print("[INFO] Building model (Affine)")
-    input_dim = train_x.shape[1]
-    model = build_simple_affine_model(input_dim)
+    # オプティマイザ設定
+    optimizer = tf.keras.optimizers.Adam(learning_rate=1e-4)
 
-    # === 4. 学習・評価のループ ===
-    print("[INFO] Starting training process...")
+    # トレーナーの構築
+    trainer = RLTrainer(model=model, optimizer=optimizer,
+                        env=env, num_actions=num_actions, gamma=0.99)
 
-    trainer = Trainer(
-        model=model,
-        train_data=(train_x, train_y),
-        valid_data=(valid_x, valid_y),
-        test_data=(test_x, test_y),
-        learning_rate_initial=1e-4,
-        learning_rate_final=1e-5,
-        switch_epoch=1000,         # 学習率を切り替えるステップ数
-        random_init_ratio=1e-4,   # バリデーション損失が改善しなくなった場合の部分的ランダム初期化率
-        max_epochs=10000,
-        patience=10,              # validationが改善しなくなってから再初期化までの猶予回数
-        num_repeats=5,            # 学習→バリデーション→（初期化）を繰り返す試行回数
-        batch_size=40000,
-        early_stop_patience=100
-    )
+    print("[INFO] Starting training...")
+    trainer.train(num_episodes=num_episodes, print_interval=10)
+    print("[INFO] Training complete.")
 
-    trainer.run()
-    print("[INFO] Training finished.")
-
-    # === 5. 保存用フォルダ作成 & 結果出力 ===
-    # サブディレクトリ: "results/{pair}/{ModelClass}_{YYYYMMDD-HHMMSS}/"
-    model_class_name = "Affine"
+    # 保存用ディレクトリ作成
     now_str = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-    # ディレクトリ名に k, future_k の値を埋め込む
     output_dir = os.path.join(
-        "results",
-        pair,
-        f"{model_class_name}_k{k}_f{future_k}_{now_str}"
-    )
+        "results/models", pair, f"ActorCritic_ws{window_size}_{now_str}")
     os.makedirs(output_dir, exist_ok=True)
-
-    # bestモデルの重み保存
-    best_weights_path = os.path.join(output_dir, "best_model_weights.h5")
-    trainer.save_best_weights(best_weights_path)
-
-    # トレーニング情報をテキスト出力
-    info_txt_path = os.path.join(output_dir, "training_info.txt")
-    with open(info_txt_path, "w", encoding="utf-8") as f:
-        f.write(f"Pair: {pair}\n")
-        f.write(f"Model Class: {model_class_name}\n")
-        f.write(f"DateTime: {now_str}\n\n")
-
-        f.write(f"Best Validation Loss : {trainer.best_val_loss:.6f}\n")
-        f.write(f"Best Validation Acc  : {trainer.best_val_acc:.6f}\n")
-        f.write(f"Best Test Loss       : {trainer.best_test_loss:.6f}\n")
-        f.write(f"Best Test Acc        : {trainer.best_test_acc:.6f}\n\n")
-
-        f.write("Trainer parameters:\n")
-        f.write(f"  max_epochs={trainer.max_epochs}\n")
-        f.write(f"  patience={trainer.patience}\n")
-        f.write(f"  early_stop_patience={trainer.early_stop_patience}\n")
-        f.write(f"  num_repeats={trainer.num_repeats}\n")
-        f.write(f"  random_init_ratio={trainer.random_init_ratio}\n")
-
-    print(f"[INFO] Results saved in: {output_dir}")
+    weights_path = os.path.join(output_dir, "best_model_weights.h5")
+    model.save_weights(weights_path)
+    print(f"[INFO] Model weights saved to: {weights_path}")
 
 
 if __name__ == "__main__":
+    # 例としてEURUSD、ウィンドウサイズ30、エピソード数1000で学習
     for pair in ['EURUSD', 'USDJPY']:
-        for k in [30, 60, 90, 120, 150, 180]:
-            for i in [1, 2, 3, 6]:
-                future_k = int(k/i)
-
-                main(pair, k, future_k)
+        main(pair=pair, window_size=30, num_episodes=1)

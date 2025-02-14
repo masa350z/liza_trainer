@@ -1,89 +1,35 @@
-# modules/models.py
-"""モデル定義モジュール
+"""
+モデル定義モジュール
 
-   * ニューラルネットワークの構造を定義する関数をまとめる。
-   * 例: 全結合モデル, Transformerなど
+ここでは、LSTMを用いたActor-Criticモデル(ポリシーヘッドとバリューヘッドを持つ)を定義します。
 """
 
-import tensorflow as tf
-from tensorflow.keras import layers
-from tensorflow.keras import Model, Sequential
+from tensorflow.keras import layers, Model
 
 
-def build_simple_affine_model(input_dim):
-    """単純な全結合モデルを構築して返す
+def build_actor_critic_model(time_steps, feature_dim, num_actions=4, lstm_units=64):
+    """
+    Actor-Criticモデルを構築して返す
 
     Args:
-        input_dim (int): 入力次元 (kに相当)
+        time_steps (int): 時系列の長さ(例: window_size)
+        feature_dim (int): 各時刻の特徴次元(価格のみの場合は1)
+        num_actions (int): 行動数(0: Hold, 1: Enter Long, 2: Enter Short, 3: Exit)
+        lstm_units (int): LSTM層のユニット数
 
     Returns:
-        tf.keras.Model: コンパイル済みのKerasモデル (2クラス分類)
+        tf.keras.Model: 入力に対して、[policy, value]を出力するモデル
     """
-    model = Sequential([
-        layers.Input(shape=(input_dim,)),
-        layers.Dense(64, activation="relu"),
-        layers.Dense(32, activation="relu"),
-        layers.Dense(2, activation="softmax")
-    ])
-    return model
+    inputs = layers.Input(shape=(time_steps, feature_dim))
+    x = layers.LSTM(lstm_units, return_sequences=True)(inputs)
+    x = layers.LSTM(lstm_units)(x)
+    common = layers.Dense(64, activation="relu")(x)
 
+    # ポリシーヘッド(行動確率をsoftmaxで出力)
+    policy = layers.Dense(
+        num_actions, activation="softmax", name="policy")(common)
+    # バリューヘッド(状態価値を1値で出力)
+    value = layers.Dense(1, name="value")(common)
 
-class TransformerBlock(layers.Layer):
-    """簡易的なTransformerエンコーダブロック"""
-
-    def __init__(self, embed_dim, num_heads, ff_dim, rate=0.1):
-        super().__init__()
-        self.att = layers.MultiHeadAttention(
-            num_heads=num_heads, key_dim=embed_dim)
-        self.ffn = Sequential([
-            layers.Dense(ff_dim, activation="relu"),
-            layers.Dense(embed_dim),
-        ])
-        self.layernorm1 = layers.LayerNormalization(epsilon=1e-6)
-        self.layernorm2 = layers.LayerNormalization(epsilon=1e-6)
-        self.dropout1 = layers.Dropout(rate)
-        self.dropout2 = layers.Dropout(rate)
-
-    def call(self, inputs, training):
-        attn_output = self.att(inputs, inputs)
-        attn_output = self.dropout1(attn_output, training=training)
-        out1 = self.layernorm1(inputs + attn_output)
-        ffn_output = self.ffn(out1)
-        ffn_output = self.dropout2(ffn_output, training=training)
-        return self.layernorm2(out1 + ffn_output)
-
-
-def build_transformer_model(input_dim, embed_dim=32, num_heads=2, ff_dim=64):
-    """Transformerブロックを使ったモデルの例
-
-    注意:
-        input_dimのスカラーに対してembeddingをかけるため
-        (k, 1) に reshape してEmbedding層に相当するDenseを挟むなど
-        実装の工夫が必要
-
-    Args:
-        input_dim (int):
-        embed_dim (int): 埋め込み次元
-        num_heads (int):
-        ff_dim (int): FFN内部の次元
-
-    Returns:
-        tf.keras.Model
-    """
-    inputs = layers.Input(shape=(input_dim,))
-    # [batch, k] -> [batch, k, 1]
-    x = layers.Reshape((input_dim, 1))(inputs)
-    # 1次元を embed_dim 次元に埋め込む
-    x = layers.Dense(embed_dim)(x)
-
-    # TransformerBlock
-    transformer_block = TransformerBlock(embed_dim, num_heads, ff_dim)
-    x = transformer_block(x)
-
-    # seq方向をpooling
-    x = layers.GlobalAveragePooling1D()(x)
-    # 最後に2クラスのソフトマックス
-    x = layers.Dense(2, activation="softmax")(x)
-
-    model = Model(inputs=inputs, outputs=x)
+    model = Model(inputs=inputs, outputs=[policy, value])
     return model

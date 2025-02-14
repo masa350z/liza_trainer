@@ -1,64 +1,94 @@
-# simulate.py
-"""シミュレーション用のエントリーポイント
+"""
+simulate.py
 
-利確(s.lik)、損切り(s.son)の複数パラメータを試し、
-・並列処理でランダムエントリーのシミュレーションを実行
-・最終資産をヒートマップとして可視化
-・ログやヒートマップを保存
+学習済みのActor-Criticモデル(重みファイル)を用い、シミュレーションエピソードを実行して
+ステップごとの資産変動ログを出力します。
+
+Usage:
+    python simulate.py --pair EURUSD --weights results/models/EURUSD/ActorCritic_ws30_YYYYMMDD-HHMMSS/best_model_weights.h5 --window_size 30
 """
 
 import os
+import csv
+import argparse
 import numpy as np
-import matplotlib.pyplot as plt
-import seaborn as sns
+import tensorflow as tf
 
-from modules.simulator_core import run_simulations_with_paramgrid
+from modules.data_loader import load_csv_data
+from modules.env import TradingEnv
+from modules.models import build_actor_critic_model
+
+# GPUメモリの必要分だけ確保する
+gpus = tf.config.list_physical_devices('GPU')
+if gpus:
+    for gpu in gpus:
+        tf.config.experimental.set_memory_growth(gpu, True)
 
 
-def main(pair):
-    print(f"[INFO] Start simulation for {pair} with random entry...")
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--pair", type=str, default="EURUSD",
+                        choices=["EURUSD", "USDJPY"], help="通貨ペア")
+    parser.add_argument("--weights", type=str,
+                        required=True, help="学習済みモデルの重みファイルのパス")
+    parser.add_argument("--window_size", type=int,
+                        default=30, help="状態として使用する過去の価格数")
+    args = parser.parse_args()
 
-    # === 1. 利確/損切りの候補を設定 ===
-    rik_values = np.linspace(0.001/100, 0.05/100, 50)
-    son_values = np.linspace(0.010/100, 0.500/100, 50)
+    pair = args.pair
+    weights_path = args.weights
+    window_size = args.window_size
 
-    # === 2. シミュレーション実行 ===
-    # run_simulations_with_paramgridが
-    # multiprocessing.Poolを用いて並列処理し、最後に( rik x son )の行列を返す。
-    final_asset_matrix = run_simulations_with_paramgrid(
-        pair=pair,
-        rik_values=rik_values,
-        son_values=son_values,
-        num_chunks=10,       # データを何分割するか
-        output_logs=True    # CSVログを残すか
-    )
+    csv_file = os.path.join("data", f"sample_{pair}_1m.csv")
+    print(f"[INFO] Loading CSV data from: {csv_file}")
+    _, prices = load_csv_data(csv_file)
+    if len(prices) < window_size + 1:
+        raise ValueError("価格データがwindow_sizeよりも短いため、シミュレーションできません。")
 
-    # === 3. ヒートマップとして可視化 ===
-    os.makedirs(f"simulator_results/{pair}", exist_ok=True)
-    fig, ax = plt.subplots(figsize=(12, 10))
-    sns.heatmap(final_asset_matrix, annot=False, fmt=".2f",
-                cmap="RdYlGn", cbar=True, ax=ax, square=True)
+    # 環境の構築
+    env = TradingEnv(prices, window_size)
+    feature_dim = 1
+    num_actions = 4
 
-    ax.set_title(f"Final Asset Heatmap ({pair}, Random Entry)")
-    ax.set_xlabel("SON parameter")
-    ax.set_ylabel("RIK parameter")
+    # モデル構築
+    model = build_actor_critic_model(
+        time_steps=window_size, feature_dim=feature_dim, num_actions=num_actions, lstm_units=64)
+    print(f"[INFO] Loading model weights from: {weights_path}")
+    model.load_weights(weights_path)
+    print("[INFO] Model weights loaded.")
 
-    # 軸ラベルをパラメータ値に
-    ax.set_xticks(np.arange(len(son_values)) + 0.5)
-    ax.set_yticks(np.arange(len(rik_values)) + 0.5)
-    ax.set_xticklabels([f"{v*100:.3f}" for v in son_values],
-                       rotation=45, ha="right")
-    ax.set_yticklabels([f"{v*100:.3f}" for v in rik_values], rotation=0)
+    # シミュレーション実行(エピソード1回分)
+    state = env.reset()
+    pos = env.position  # 状態管理は環境側で行うため、こちらは参考情報
+    asset = 0.0  # シミュレーション中の累積報酬(資産)として算出
+    step_log = []
 
-    heatmap_path = f"simulator_results/{pair}/heatmap_{pair}.png"
-    plt.tight_layout()
-    plt.savefig(heatmap_path, dpi=120)
-    plt.close()
+    while True:
+        state_input = state[None, ...]
+        policy, _ = model(state_input, training=False)
+        policy = policy.numpy()[0]
+        action = np.argmax(policy)  # 最尤行動を採用
+        next_state, reward, done = env.step(action)
+        asset += reward
+        step_log.append((env.current_index, asset, action, reward))
+        if done:
+            break
+        state = next_state
 
-    print(f"[INFO] Heatmap saved at {heatmap_path}")
-    print("[INFO] Simulation complete.")
+    print(f"[INFO] Simulation complete. Final asset: {asset:.4f}")
+
+    # ログ保存
+    out_dir = os.path.join("results/simulations", pair + "_AI_logs")
+    os.makedirs(out_dir, exist_ok=True)
+    log_filename = f"log_ai_ws{window_size}.csv"
+    log_path = os.path.join(out_dir, log_filename)
+    with open(log_path, "w", newline="", encoding="utf-8") as fw:
+        writer = csv.writer(fw)
+        writer.writerow(["step_index", "asset", "action", "reward"])
+        for row in step_log:
+            writer.writerow(row)
+    print(f"[INFO] Step-by-step log saved to: {log_path}")
 
 
 if __name__ == "__main__":
-    main(pair='EURUSD')
-    main(pair='USDJPY')
+    main()
