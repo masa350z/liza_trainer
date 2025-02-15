@@ -4,32 +4,46 @@
 ここでは、LSTMを用いたActor-Criticモデル(ポリシーヘッドとバリューヘッドを持つ)を定義します。
 """
 
-from tensorflow.keras import layers, Model
+from tensorflow.keras import layers  # type: ignore
 
 
-def build_actor_critic_model(time_steps, feature_dim, num_actions=4, lstm_units=64):
-    """
-    Actor-Criticモデルを構築して返す
+class Affine_ActorCriticModel(layers.Layer):
+    def __init__(self, num_actions, feature_dim):
+        super(Affine_ActorCriticModel, self).__init__()
+        self.affine1 = layers.Dense(64, activation="relu")
+        self.affine2 = layers.Dense(64, activation="relu")
 
-    Args:
-        time_steps (int): 時系列の長さ(例: window_size)
-        feature_dim (int): 各時刻の特徴次元(価格のみの場合は1)
-        num_actions (int): 行動数(0: Hold, 1: Enter Long, 2: Enter Short, 3: Exit)
-        lstm_units (int): LSTM層のユニット数
+        self.common = layers.Dense(64, activation="relu")
+        self.policy = layers.Dense(
+            num_actions, activation="softmax", name="policy")
+        self.value = layers.Dense(feature_dim, name="value")
 
-    Returns:
-        tf.keras.Model: 入力に対して、[policy, value]を出力するモデル
-    """
-    inputs = layers.Input(shape=(time_steps, feature_dim))
-    x = layers.LSTM(lstm_units, return_sequences=True)(inputs)
-    x = layers.LSTM(lstm_units)(x)
-    common = layers.Dense(64, activation="relu")(x)
+    def call(self, inputs):
+        x = self.affine1(inputs)
+        x = self.affine2(x)
+        common = self.common(x)
+        policy = self.policy(common)
+        value = self.value(common)
 
-    # ポリシーヘッド(行動確率をsoftmaxで出力)
-    policy = layers.Dense(
-        num_actions, activation="softmax", name="policy")(common)
-    # バリューヘッド(状態価値を1値で出力)
-    value = layers.Dense(1, name="value")(common)
+        return policy, value
 
-    model = Model(inputs=inputs, outputs=[policy, value])
-    return model
+
+class LSTM_ActorCriticModel(layers.Layer):
+    def __init__(self, num_actions, feature_dim, lstm_units=64):
+        super(LSTM_ActorCriticModel, self).__init__()
+        self.lstm1 = layers.LSTM(lstm_units, return_sequences=True)
+        self.lstm2 = layers.LSTM(lstm_units)
+
+        self.common = layers.Dense(64, activation="relu")
+        self.policy = layers.Dense(
+            num_actions, activation="softmax", name="policy")
+        self.value = layers.Dense(feature_dim, name="value")
+
+    def call(self, inputs):
+        x = self.lstm1(inputs)
+        x = self.lstm2(x)
+        common = self.common(x)
+        policy = self.policy(common)
+        value = self.value(common)
+
+        return policy, value

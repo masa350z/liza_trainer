@@ -8,12 +8,10 @@ VectorizedTradingEnv を構築し、RLTrainerVectorized を用いて学習を行
 import os
 import datetime
 import tensorflow as tf
-import numpy as np
 
 from modules.data_loader import load_csv_data
-from modules.env import TradingEnv
-from modules.env import VectorizedTradingEnv
-from modules.models import build_actor_critic_model
+from modules.env import TradingEnv, VectorizedTradingEnv
+from modules.models import LSTM_ActorCriticModel, Affine_ActorCriticModel
 from modules.trainer import RLTrainerVectorized
 
 # GPUメモリの必要分だけ確保
@@ -65,14 +63,16 @@ def main(pair, window_size, num_episodes, num_envs=32,
     segments = split_prices(prices, num_envs)
     envs = [TradingEnv(segment, window_size) for segment in segments]
     vector_env = VectorizedTradingEnv(envs)
-    feature_dim = 1  # 価格のみの場合
 
     num_actions = 4  # 0: Hold, 1: Enter Long, 2: Enter Short, 3: Exit
-    model = build_actor_critic_model(time_steps=window_size,
-                                     feature_dim=feature_dim,
-                                     num_actions=num_actions,
-                                     lstm_units=64)
-    optimizer = tf.keras.optimizers.Adam(learning_rate=1e-4)
+    feature_dim = 1  # 価格のみの場合
+
+    model = LSTM_ActorCriticModel(num_actions=num_actions,
+                                  feature_dim=feature_dim)
+    # model = Affine_ActorCriticModel(num_actions=num_actions,
+    #                                 feature_dim=feature_dim)
+
+    optimizer = tf.keras.optimizers.Adam(learning_rate=1e-5)
 
     trainer = RLTrainerVectorized(model=model,
                                   optimizer=optimizer,

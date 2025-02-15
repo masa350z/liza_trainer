@@ -15,11 +15,12 @@ import numpy as np
 
 
 class TradingEnv:
-    def __init__(self, prices, window_size):
+    def __init__(self, prices, window_size, max_hold_steps=60*24):
         """
         Args:
             prices (list or np.array): 時系列の価格データ
             window_size (int): 状態として使用する過去価格の数
+            max_hold_steps (int): 同じポジションを保持できる最大ステップ数。これを超えると強制決済。
         """
         self.prices = np.array(prices, dtype=np.float32)
         self.window_size = window_size
@@ -27,6 +28,8 @@ class TradingEnv:
         self.done = False
         self.position = 0  # 0: ノーポジション, 1: ロング, -1: ショート
         self.entry_price = 0.0
+        self.max_hold_steps = max_hold_steps
+        self.hold_steps = 0  # 現在のポジションを保持しているステップ数
 
     def reset(self):
         """
@@ -36,13 +39,13 @@ class TradingEnv:
         self.done = False
         self.position = 0
         self.entry_price = 0.0
+        self.hold_steps = 0
         state = self._get_state()
-
         return state
 
     def _get_state(self):
         """
-        現在の状態(直近window_size個の価格)を返す
+        現在の状態（直近window_size個の価格）を返す
         出力形状: (window_size, 1)
         """
         state = self.prices[self.current_index -
@@ -63,13 +66,13 @@ class TradingEnv:
         """
         # まず、次の価格にアクセスする前に終了チェックを行う
         if self.current_index >= len(self.prices):
-            # エピソード終了時、未決済のポジションがあれば強制クローズ
             reward = 0.0
             if self.position != 0:
                 final_price = self.prices[-1]
                 reward += (final_price - self.entry_price) * self.position
                 self.position = 0
                 self.entry_price = 0.0
+                self.hold_steps = 0
             self.done = True
             return None, reward, self.done
 
@@ -77,33 +80,53 @@ class TradingEnv:
         price = self.prices[self.current_index]
         reward = 0.0
 
-        # 行動に基づく処理
         if self.position == 0:
+            # 新規エントリーの場合
             if action == 1:
                 self.position = 1
                 self.entry_price = price
+                self.hold_steps = 0  # ポジション開始時にリセット
+
             elif action == 2:
                 self.position = -1
                 self.entry_price = price
-            # Holdの場合は何もしない
+                self.hold_steps = 0
+
+            else:
+                reward = 0
+
         else:
-            if action == 3:
-                reward = (price - self.entry_price) * self.position
+            # ポジションを保持中の場合
+            self.hold_steps += 1
+            profit = (price - self.entry_price) * self.position
+
+            if action == 1 and self.position == -1:
+                reward = profit
+                self.position = 1
+                self.entry_price = price
+                self.hold_steps = 0  # ポジション開始時にリセット
+
+            elif action == 2 and self.position == 1:
+                reward = profit
+                self.position = -1
+                self.entry_price = price
+                self.hold_steps = 0
+
+            # Exit 行動が取られた場合または所定の保持ステップ数に達した場合、強制決済
+            elif action == 3 or self.hold_steps >= self.max_hold_steps:
+                reward = profit
                 self.position = 0
                 self.entry_price = 0.0
+                self.hold_steps = 0
 
         self.current_index += 1
 
         # エピソード終了のチェック
         if self.current_index >= len(self.prices):
-            if self.position != 0:
-                final_price = self.prices[-1]
-                reward += (final_price - self.entry_price) * self.position
-                self.position = 0
-                self.entry_price = 0.0
             self.done = True
 
         next_state = self._get_state() if not self.done else None
+
         return next_state, reward, self.done
 
 
