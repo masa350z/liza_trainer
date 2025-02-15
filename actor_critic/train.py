@@ -36,7 +36,7 @@ def main(pair="USDJPY", window_size=30, num_episodes=10,
         mini_batch_size (int): ミニバッチサイズ
         historical_length (str): CSVファイル名の付加文字列 (例: '_len10000')
     """
-    csv_file = os.path.join("data", f"{pair}_1m{historical_length}.csv")
+    csv_file = os.path.join("../data", f"{pair}_1m{historical_length}.csv")
     print(f"[TRAIN] Loading CSV data from: {csv_file}")
     _, prices = load_csv_data(csv_file, skip=100)
     if len(prices) < window_size + 1:

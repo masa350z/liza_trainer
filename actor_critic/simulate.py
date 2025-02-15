@@ -41,7 +41,7 @@ def main():
     weights_path = args.weights
     window_size = args.window_size
 
-    csv_file = os.path.join("data", f"{pair}_1m.csv")
+    csv_file = os.path.join("../data", f"{pair}_1m.csv")
     print(f"[INFO] Loading CSV data from: {csv_file}")
     _, prices = load_csv_data(csv_file)
     if len(prices) < window_size + 1:
