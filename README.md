@@ -9,7 +9,7 @@
 - 学習ロジックは `modules/trainer.py` の `Trainer` クラスが管理。
 - バリデーション損失が改善しなくなった際、一部重みをランダム初期化して局所解回避。
 - 一定エポック改善しなければ早期終了。
-- 学習完了後、最良のモデル重みが `results/<通貨ペア>/<モデル種別>_k<k>_f<future_k>_<日時>/best_model_weights.h5` に保存。
+- 学習完了後、最良のモデル重みが `results/<通貨ペア>/<モデル種別>_k<k>_f<future_k>_<日時>/best_model.weights.h5` に保存。
 
 ### 実行方法
 ```bash
@@ -37,7 +37,7 @@ python simulate.py
 ## 3. AIモデルを用いたシミュレーション (simulate_with_ai.py)
 
 ### 概要
-- 学習済みモデル (`best_model_weights.h5`) を使用。
+- 学習済みモデル (`best_model.weights.h5`) を使用。
 - AIの予測に基づき、LONG または SHORT でエントリー。
 - 各ステップで利確 (`rik`)、損切り (`son`) を判定。
 - 結果は `simulator_results/<pair>/AI_logs/` に保存。
@@ -45,7 +45,7 @@ python simulate.py
 ### 実行方法
 ```bash
 python simulate_with_ai.py --pair EURUSD \
-    --weights results/EURUSD/Affine_k30_f5_20250126-230851/best_model_weights.h5 \
+    --weights results/EURUSD/Affine_k30_f5_20250126-230851/best_model.weights.h5 \
     --k 30 \
     --rik 0.001 \
     --son 0.01

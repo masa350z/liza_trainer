@@ -8,7 +8,7 @@ AIモデル(weightsファイル)を用いてエントリー方向を決定し、
 
 Usage:
   python simulate_with_ai.py --pair EURUSD \
-      --weights results/EURUSD/Affine_k30_f5_20250126-230851/best_model_weights.h5 \
+      --weights results/EURUSD/Affine_k30_f5_20250126-230851/best_model.weights.h5 \
       --k 30 --rik 0.001 --son 0.01
 """
 

@@ -70,8 +70,8 @@ def create_dataset(prices,
     data_array, label_array = _balance_up_down(data_array, label_array)
 
     # 5. 正規化 (最大値-最小値で割る)
-    #    価格が常に1付近ならば不要かもしれませんが、ここでは例として一応。
     data_array = _minmax_scale(data_array)
+    data_array = data_array.astype('float16')
 
     # 6. 学習/検証/テストに分割
     (train_x, train_y), (valid_x, valid_y), (test_x, test_y) = _split_data(

@@ -13,7 +13,7 @@ from modules.data_loader import load_csv_data
 
 
 def run_simulations_with_paramgrid(pair, rik_values, son_values, num_chunks=4,
-                                   output_logs=True):
+                                   output_logs=True, spread=0.0):
     """
     複数の (rik, son) パラメータを試し、終値資産を格子状にまとめた行列を返す。
 
@@ -23,6 +23,7 @@ def run_simulations_with_paramgrid(pair, rik_values, son_values, num_chunks=4,
         son_values (list of float): 損切りパラメータの候補
         num_chunks (int): 価格データを何分割するか (並列用)
         output_logs (bool): TrueならCSVログを残す (最終資産のみ)
+        spread (float): 絶対値で指定するスプレッド
 
     Returns:
         np.ndarray: shape (len(rik_values), len(son_values)) の行列
@@ -74,16 +75,25 @@ def run_simulations_with_paramgrid(pair, rik_values, son_values, num_chunks=4,
             # 新規シミュレーション
             final_asset = simulate_param_with_chunks(chunks, rik, son,
                                                      out_dir=out_dir,
-                                                     output_logs=output_logs)
+                                                     output_logs=output_logs,
+                                                     spread=spread)
             final_asset_matrix[i, j] = final_asset
 
     return final_asset_matrix
 
 
-def simulate_param_with_chunks(chunks, rik, son, out_dir, output_logs=True):
+def simulate_param_with_chunks(chunks, rik, son, out_dir, output_logs=True, spread=0.0):
     """
     num_chunks個に分けたprice配列を、それぞれ並列にシミュレート。
     前のチャンクの最終資産を次のチャンクに継承し、最後に得られる最終資産を返す。
+
+    Args:
+        chunks (list of np.ndarray): 分割された価格配列
+        rik (float): 利確閾値
+        son (float): 損切り閾値
+        out_dir (str): ログ保存先ディレクトリ
+        output_logs (bool): True なら最終資産CSVを保存
+        spread (float): 絶対値で指定するスプレッド
 
     Returns:
         float: (最終的な合算資産)
@@ -91,7 +101,7 @@ def simulate_param_with_chunks(chunks, rik, son, out_dir, output_logs=True):
     with Pool(processes=len(chunks)) as pool:
         # chunkごとに simulate_one_chunk(資産0スタート)
         results = pool.starmap(simulate_one_chunk,
-                               [(chunk, rik, son, idx) for idx, chunk in enumerate(chunks)])
+                               [(chunk, rik, son, idx, spread) for idx, chunk in enumerate(chunks)])
 
     # resultsは [(final_asset, asset_list, chunk_index), ...]
     # chunk_index順に並べ替えて "前チャンクの最終値" を次チャンクに足し合わせる
@@ -116,9 +126,17 @@ def simulate_param_with_chunks(chunks, rik, son, out_dir, output_logs=True):
     return total_asset
 
 
-def simulate_one_chunk(price_array, rik, son, chunk_index):
+def simulate_one_chunk(price_array, rik, son, chunk_index, spread=0.0):
     """
     chunk内を「資産0スタート」でランダムエントリーシミュレーション。
+
+    Args:
+    price_array (np.ndarray): 分割された価格配列
+    rik (float): 利確閾値
+    son (float): 損切り閾値
+    chunk_index (int): チャンクのインデックス
+    spread (float): 絶対値で指定するスプレッド
+
     Returns:
         (final_asset, asset_history, chunk_index)
     """
@@ -144,5 +162,6 @@ def simulate_one_chunk(price_array, rik, son, chunk_index):
             # 新規エントリー (50%でLONG, 50%でSHORT)
             pos = 1 if random.random() > 0.5 else -1
             entry_price = price
+            asset -= spread
 
     return (asset, None, chunk_index)

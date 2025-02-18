@@ -17,10 +17,11 @@ from modules.simulator_core import run_simulations_with_paramgrid
 
 def main(pair):
     print(f"[INFO] Start simulation for {pair} with random entry...")
+    spread = 0.2/100 if pair == 'USDJPY' else 0.3/10000
 
     # === 1. 利確/損切りの候補を設定 ===
-    rik_values = np.linspace(0.001/100, 0.05/100, 50)
-    son_values = np.linspace(0.010/100, 0.500/100, 50)
+    rik_values = np.linspace(0.010/100, 0.500/100, 50)
+    son_values = np.linspace(0.100/100, 5.000/100, 50)
 
     # === 2. シミュレーション実行 ===
     # run_simulations_with_paramgridが
@@ -30,7 +31,8 @@ def main(pair):
         rik_values=rik_values,
         son_values=son_values,
         num_chunks=10,       # データを何分割するか
-        output_logs=True    # CSVログを残すか
+        output_logs=True,    # CSVログを残すか
+        spread=spread
     )
 
     # === 3. ヒートマップとして可視化 ===

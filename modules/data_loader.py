@@ -7,7 +7,7 @@
 import pandas as pd
 
 
-def load_csv_data(csv_path):
+def load_csv_data(csv_path, skip=1):
     """CSVファイルを読み込み、timestampとpriceの配列を返す
 
     CSV形式:
@@ -27,4 +27,4 @@ def load_csv_data(csv_path):
     df = pd.read_csv(csv_path)
     timestamps = df["timestamp"].tolist()
     prices = df["price"].tolist()
-    return timestamps, prices
+    return timestamps[::skip], prices[::skip]

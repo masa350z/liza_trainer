@@ -218,25 +218,71 @@ class Trainer:
             zip(grads, self.model.trainable_variables))
 
     def _evaluate(self, x, y):
-        """損失と正解率を返す"""
-        preds = self.model(x, training=False)
-        loss_val = tf.keras.losses.CategoricalCrossentropy()(y, preds)
-        # acc計算
-        correct = tf.equal(tf.argmax(preds, axis=1), tf.argmax(y, axis=1))
-        acc_val = tf.reduce_mean(tf.cast(correct, tf.float32))
-        return float(loss_val), float(acc_val)
+        """損失と正解率(accuracy)を返す (ミニバッチ処理版)
+
+        Args:
+            x (np.ndarray or tf.Tensor): 入力データ (N, input_dim)
+            y (np.ndarray or tf.Tensor): ラベルデータ (N, num_classes)
+
+        Returns:
+            (float, float): (平均loss, 平均accuracy)
+        """
+
+        total_loss = 0.0
+        total_correct = 0.0
+        total_samples = 0
+
+        num_samples = x.shape[0]
+        batch_size = self.batch_size  # Trainerクラスなどで設定されているバッチサイズ
+
+        # ミニバッチに分割して評価
+        for start_idx in range(0, num_samples, batch_size):
+            end_idx = start_idx + batch_size
+            batch_x = x[start_idx:end_idx]
+            batch_y = y[start_idx:end_idx]
+
+            # 予測
+            preds = self.model(batch_x, training=False)
+
+            # カスタムロスを使うならここを差し替え
+            # 例: loss_fn(batch_y, preds)
+            # 今回は標準的なCategoricalCrossentropyを使う
+            loss_val = tf.keras.losses.CategoricalCrossentropy()(batch_y, preds)
+
+            # accuracy計算
+            correct = tf.equal(tf.argmax(preds, axis=1),
+                               tf.argmax(batch_y, axis=1))
+            acc_val = tf.reduce_mean(tf.cast(correct, tf.float32))
+
+            # バッチごとの合計に加算 (平均にするためバッチサイズをかける)
+            bsz = batch_x.shape[0]
+            total_loss += float(loss_val) * bsz
+            total_correct += float(acc_val) * bsz
+            total_samples += bsz
+
+        # 全サンプルに対する平均値を返す
+        avg_loss = total_loss / total_samples
+        avg_acc = total_correct / total_samples
+
+        return avg_loss, avg_acc
 
     def _init_model_weights(self):
         """モデルの全重みを再初期化"""
         dummy_input = tf.zeros((1, self.train_x.shape[1]))
         self.model(dummy_input, training=False)  # ビルド(重み生成)
         for layer in self.model.layers:
-            if hasattr(layer, "kernel_initializer"):
-                layer.kernel.assign(layer.kernel_initializer(
-                    layer.kernel.shape, layer.kernel.dtype))
-            if hasattr(layer, "bias_initializer"):
-                layer.bias.assign(layer.bias_initializer(
-                    layer.bias.shape, layer.bias.dtype))
+            # もしweightsが空なら何もしない (例えばReshapeなど)
+            init_weights = layer.get_weights()
+            if not init_weights:
+                continue
+
+            new_weights = []
+            for w in init_weights:
+                # w.shape をもとに初期化（例: 正規分布 * 0.05）
+                rnd_w = np.random.randn(*w.shape).astype(w.dtype) * 0.05
+                new_weights.append(rnd_w)
+
+            layer.set_weights(new_weights)
 
     def _partial_random_init(self):
         """モデル重みの一部をランダムに初期化する(局所解回避)"""
