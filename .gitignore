@@ -1,6 +1,4 @@
 *.csv
 *__pycache__
 *temp.py
-*.h5
-venv
-*.Identifier
+*venv

@@ -1,0 +1,15 @@
+Pair: BTCJPY
+Model Class: LSTM_CNN_INDICATOR
+DateTime: 20250217-145133
+
+Best Validation Loss : 0.689152
+Best Validation Acc  : 0.537291
+Best Test Loss       : 0.688837
+Best Test Acc        : 0.537384
+
+Trainer parameters:
+  max_epochs=10000
+  patience=10
+  early_stop_patience=100
+  num_repeats=5
+  random_init_ratio=0.0001

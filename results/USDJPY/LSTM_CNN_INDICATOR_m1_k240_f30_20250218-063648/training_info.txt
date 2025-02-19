@@ -1,0 +1,15 @@
+Pair: USDJPY
+Model Class: LSTM_CNN_INDICATOR
+DateTime: 20250218-063648
+
+Best Validation Loss : 0.690391
+Best Validation Acc  : 0.531501
+Best Test Loss       : 0.691027
+Best Test Acc        : 0.526951
+
+Trainer parameters:
+  max_epochs=10000
+  patience=10
+  early_stop_patience=100
+  num_repeats=5
+  random_init_ratio=0.0001
