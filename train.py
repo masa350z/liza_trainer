@@ -116,4 +116,7 @@ if __name__ == "__main__":
             for i in [1, 2, 3, 6]:
                 future_k = int(k/i)
 
-                main(pair, k, future_k)
+    for pair in ['BTCJPY']:
+        m = 1
+        for k, future_k in [(180, 15), (90, 15), (60, 15), (30, 15), (30, 10), (30, 20), (30, 30)]:
+            main(pair, m, k, future_k)
