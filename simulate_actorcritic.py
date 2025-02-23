@@ -17,8 +17,8 @@ import numpy as np
 import tensorflow as tf
 
 from modules.data_loader import load_csv_data
-from modules.env import TradingEnv
-from modules.models import LSTM_ActorCriticModel, Affine_ActorCriticModel
+from actor_critic_modules.env import TradingEnv
+from actor_critic_modules.models import LSTM_ActorCriticModel
 
 # GPUメモリの必要分だけ確保
 gpus = tf.config.list_physical_devices('GPU')
